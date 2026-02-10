@@ -16,7 +16,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsub = logger.subscribe(setLogs);
     const handleScroll = () => {
-      // Small threshold to toggle scrolled state for nav styling
       setScrolled(window.scrollY > 10);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -25,7 +24,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0d061a] flex flex-col selection:bg-purple-500/30 overflow-x-hidden">
-      {/* Navigation - Fixed White Line by avoiding bottom borders and using matching bg */}
+      {/* Navigation */}
       <nav className={`fixed top-0 w-full z-[200] transition-all duration-500 ease-in-out ${scrolled ? 'bg-[#0d061a] py-3 shadow-[0_15px_50px_rgba(0,0,0,0.9)]' : 'bg-transparent py-6 md:py-12'}`}>
         <div className="container mx-auto px-5 md:px-12 flex items-center justify-between">
           <div className="flex items-center gap-4 md:gap-5 group cursor-pointer" onClick={() => setSelectedVideo(null)}>
@@ -38,26 +37,36 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <button 
-            onClick={() => setIsLogOpen(true)}
-            className="group flex items-center gap-3 px-5 py-2.5 md:px-8 md:py-4 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/5 active:scale-95 shadow-lg"
-          >
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.6)]"></div>
-            <span className="text-[9px] md:text-[11px] font-orbitron font-black text-white uppercase tracking-widest hidden sm:inline">System_Console</span>
-            <span className="text-[9px] font-orbitron font-black text-white uppercase tracking-widest sm:hidden">LOG</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <a 
+              href="https://kuru-kuru.ru" 
+              className="flex items-center gap-2 px-4 py-2 md:px-6 md:py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 text-[9px] md:text-[11px] font-orbitron font-black text-white uppercase tracking-widest"
+            >
+              <i className="fas fa-home"></i>
+              <span className="hidden sm:inline">Домой</span>
+            </a>
+
+            <button 
+              onClick={() => setIsLogOpen(true)}
+              className="group flex items-center gap-3 px-5 py-2.5 md:px-8 md:py-4 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/5 active:scale-95 shadow-lg"
+            >
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.6)]"></div>
+              <span className="text-[9px] md:text-[11px] font-orbitron font-black text-white uppercase tracking-widest hidden sm:inline">System_Console</span>
+              <span className="text-[9px] font-orbitron font-black text-white uppercase tracking-widest sm:hidden">LOG</span>
+            </button>
+          </div>
         </div>
       </nav>
 
       {/* Hero / Player Section */}
       <header className="pt-32 md:pt-56 pb-12 md:pb-24 bg-[#0d061a] relative overflow-hidden">
-        {/* Decorative background glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-6xl aspect-square bg-purple-600/5 blur-[120px] rounded-full -z-10 pointer-events-none"></div>
         
         <div className="container mx-auto px-5 md:px-12">
            {selectedVideo ? (
              <div className="animate-in fade-in zoom-in-[0.99] slide-in-from-bottom-4 duration-700">
                <VideoPlayer video={selectedVideo} onClose={() => setSelectedVideo(null)} />
+               {/* Описание видео оставлено здесь, но система реакций и комментов внутри VideoPlayer или ниже */}
                <div className="mt-8 md:mt-12 p-6 md:p-10 bg-white/[0.02] border border-white/5 rounded-3xl backdrop-blur-3xl">
                   <h2 className="text-xl md:text-3xl font-orbitron font-bold text-white mb-4 uppercase tracking-tight">{selectedVideo.title}</h2>
                   <p className="text-zinc-400 text-sm md:text-lg leading-relaxed font-light">{selectedVideo.description}</p>
