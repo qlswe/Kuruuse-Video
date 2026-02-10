@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { VideoData, VideoQuality, Reactions, Comment } from '../types';
 import { logger } from '../services/logger';
@@ -14,22 +13,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(() => parseFloat(localStorage.getItem('v_vol') || '0.7'));
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSeeking, setIsSeeking] = useState(false);
   const [isQualityMenuOpen, setIsQualityMenuOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Реакции и комментарии
+  // --- ЛОГИКА ОГРАНИЧЕНИЙ ---
+  
   const [reactions, setReactions] = useState<Reactions>(() => {
-    const saved = localStorage.getItem(`v_reactions_${video.id}`);
+    const saved = localStorage.getItem(`v_global_reactions_${video.id}`);
     return saved ? JSON.parse(saved) : { like: 0, love: 0, wow: 0 };
   });
+
+  const [userReaction, setUserReaction] = useState<keyof Reactions | null>(() => {
+    return localStorage.getItem(`v_global_user_react_${video.id}`) as keyof Reactions | null;
+  });
+
   const [comments, setComments] = useState<Comment[]>(() => {
-    const saved = localStorage.getItem(`v_comments_${video.id}`);
+    const saved = localStorage.getItem(`v_global_comments_${video.id}`);
     return saved ? JSON.parse(saved) : [];
   });
+  
+  const [userCommentCount, setUserCommentCount] = useState(() => {
+    return parseInt(localStorage.getItem(`v_global_user_comment_count_${video.id}`) || '0');
+  });
+
   const [newComment, setNewComment] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,16 +67,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
     videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause();
   };
 
-  const toggleFullscreen = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
-  };
-
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
     setVolume(val);
@@ -73,243 +74,283 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
     localStorage.setItem('v_vol', val.toString());
   };
 
-  const addReaction = (type: keyof Reactions) => {
-    const updated = { ...reactions, [type]: reactions[type] + 1 };
-    setReactions(updated);
-    localStorage.setItem(`v_reactions_${video.id}`, JSON.stringify(updated));
-    logger.log('info', `Added reaction: ${type} for video ${video.id}`);
+  // ИСПРАВЛЕННАЯ ФУНКЦИЯ ПОЛНОЭКРАННОГО РЕЖИМА
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(err => {
+        logger.log('error', `Fullscreen request failed: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleReaction = (type: keyof Reactions) => {
+    const currentReactions = { ...reactions };
+    const storageKey = `v_global_user_react_${video.id}`;
+    
+    if (userReaction === type) {
+      currentReactions[type] = Math.max(0, currentReactions[type] - 1);
+      setUserReaction(null);
+      localStorage.removeItem(storageKey);
+    } else {
+      if (userReaction) {
+        currentReactions[userReaction] = Math.max(0, currentReactions[userReaction] - 1);
+      }
+      currentReactions[type] += 1;
+      setUserReaction(type);
+      localStorage.setItem(storageKey, type);
+    }
+
+    setReactions(currentReactions);
+    localStorage.setItem(`v_global_reactions_${video.id}`, JSON.stringify(currentReactions));
   };
 
   const postComment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || userCommentCount >= 10) return;
+
     const comment: Comment = {
       id: Math.random().toString(36).substr(2, 9),
-      author: "Guest_" + Math.random().toString(36).substr(2, 4).toUpperCase(),
+      author: "NODE_" + Math.random().toString(36).substr(2, 4).toUpperCase(),
       text: newComment.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
+
     const updated = [comment, ...comments];
+    const newCount = userCommentCount + 1;
+
     setComments(updated);
+    setUserCommentCount(newCount);
     setNewComment("");
-    localStorage.setItem(`v_comments_${video.id}`, JSON.stringify(updated));
-    logger.log('info', `Posted comment on video ${video.id}`);
+    
+    localStorage.setItem(`v_global_comments_${video.id}`, JSON.stringify(updated));
+    localStorage.setItem(`v_global_user_comment_count_${video.id}`, newCount.toString());
   };
 
-  useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
+  const deleteComment = (id: string) => {
+    const updated = comments.filter(c => c.id !== id);
+    const newCount = Math.max(0, userCommentCount - 1);
+    
+    setComments(updated);
+    setUserCommentCount(newCount);
+    
+    localStorage.setItem(`v_global_comments_${video.id}`, JSON.stringify(updated));
+    localStorage.setItem(`v_global_user_comment_count_${video.id}`, newCount.toString());
+  };
 
-  const handleQualityChange = (e: React.MouseEvent, newQuality: VideoQuality) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const time = videoRef.current?.currentTime || 0;
-    setQuality(newQuality);
-    setIsLoading(true);
-    setIsQualityMenuOpen(false);
-    localStorage.setItem('v_last_time', time.toString());
-    logger.log('info', `Stream switched to: ${newQuality}`);
+  const startEdit = (c: Comment) => {
+    setEditingId(c.id);
+    setEditingText(c.text);
+  };
+
+  const saveEdit = () => {
+    if (!editingText.trim()) return;
+    const updated = comments.map(c => c.id === editingId ? { ...c, text: editingText.trim() } : c);
+    setComments(updated);
+    setEditingId(null);
+    localStorage.setItem(`v_global_comments_${video.id}`, JSON.stringify(updated));
   };
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     setIsLoading(true);
+    const savedTime = currentTime;
     v.src = video.sources[quality];
     v.load();
     v.volume = volume;
-
     const onCanPlay = () => {
       setIsLoading(false);
       setDuration(v.duration);
-      const saved = localStorage.getItem('v_last_time');
-      if (saved) {
-        v.currentTime = parseFloat(saved);
-        localStorage.removeItem('v_last_time');
-      }
+      if (savedTime > 0) v.currentTime = savedTime;
       if (isPlaying) v.play().catch(() => {});
     };
-
     v.addEventListener('canplay', onCanPlay);
-    v.addEventListener('playing', () => { setIsPlaying(true); setIsLoading(false); });
-    v.addEventListener('pause', () => setIsPlaying(false));
-    v.addEventListener('waiting', () => setIsLoading(true));
-    v.addEventListener('seeking', () => setIsSeeking(true));
-    v.addEventListener('seeked', () => setIsSeeking(false));
     return () => v.removeEventListener('canplay', onCanPlay);
   }, [quality, video]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
       <div 
         ref={containerRef}
-        className="relative w-full aspect-video bg-black rounded-xl md:rounded-3xl overflow-hidden shadow-2xl group select-none touch-none"
+        className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group"
         onMouseMove={handleActivity}
         onTouchStart={handleActivity}
       >
-        {/* Top Bar */}
-        <div className={`absolute top-0 left-0 right-0 p-3 md:p-6 z-[100] bg-gradient-to-b from-black/90 to-transparent transition-all duration-500 flex justify-between items-center ${showControls ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'}`}>
-          <div className="flex flex-col">
-            <span className="text-[7px] md:text-[9px] font-pixel text-purple-400 tracking-widest uppercase">Live_Feed</span>
-            <h3 className="text-white font-orbitron text-[10px] md:text-sm truncate max-w-[150px] uppercase">{video.title}</h3>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 md:w-10 md:h-10 bg-white/5 hover:bg-red-500/80 backdrop-blur-md text-white rounded-full flex items-center justify-center transition-all">
-            <i className="fas fa-times text-xs md:text-base"></i>
-          </button>
-        </div>
-
-        {/* Video Content */}
-        <div className="w-full h-full relative flex items-center justify-center bg-black">
-          {(isLoading || isSeeking) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
-              <div className="w-10 h-10 border-2 border-purple-500/10 border-t-purple-500 rounded-full animate-spin"></div>
+        <div className="w-full h-full relative flex items-center justify-center">
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50">
+              <div className="w-10 h-10 border-2 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
             </div>
           )}
           <video
             ref={videoRef}
             className="w-full h-full object-contain cursor-pointer"
-            onTimeUpdate={() => !isSeeking && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+            onTimeUpdate={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
             onClick={togglePlay}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
             playsInline
           />
         </div>
 
-        {/* Quality Menu */}
-        {isQualityMenuOpen && (
-          <div className="absolute inset-0 z-[1000] pointer-events-none flex items-end justify-end p-4 md:p-8">
-            <div className="fixed inset-0 pointer-events-auto bg-black/10" onClick={() => setIsQualityMenuOpen(false)}></div>
-            <div className="relative pointer-events-auto w-32 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom-2 duration-200 mb-14 md:mb-20">
-                {(['auto', 'high', 'medium', 'low'] as VideoQuality[]).map(q => (
-                  <button 
-                    key={q} 
-                    onClick={(e) => handleQualityChange(e, q)}
-                    className={`w-full px-4 py-3 text-left text-[10px] font-bold uppercase border-b border-white/5 last:border-0 transition-colors ${quality === q ? 'text-purple-400 bg-purple-500/10' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
-                  >
-                    {q === 'high' ? '1080P' : q === 'medium' ? '720P' : q === 'low' ? '360P' : 'AUTO'}
-                  </button>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Bottom Controls */}
-        <div className={`absolute bottom-0 left-0 right-0 p-3 md:p-8 bg-gradient-to-t from-black via-black/40 to-transparent z-[200] transition-all duration-500 ${showControls || !isPlaying ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}>
-          
-          {/* Timeline */}
-          <div className="relative w-full h-6 mb-3 flex items-center group/timeline">
-            <div className="absolute w-full h-1 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.7)]" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}></div>
-            </div>
-            <input type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onMouseDown={() => setIsSeeking(true)} onMouseUp={() => setIsSeeking(false)} onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              setCurrentTime(val);
-              if (videoRef.current) videoRef.current.currentTime = val;
-            }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
-            <div className="absolute w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none" style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}></div>
+        {/* Управление плеером */}
+        <div className={`absolute inset-0 z-40 bg-gradient-to-t from-black/80 via-transparent transition-opacity duration-500 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="absolute top-0 left-0 right-0 p-4 md:p-8 flex justify-between items-center">
+            <h3 className="text-white font-orbitron text-[10px] md:text-xs uppercase tracking-widest truncate max-w-[200px]">{video.title}</h3>
+            <button onClick={onClose} className="w-10 h-10 bg-white/10 hover:bg-red-500/80 rounded-xl flex items-center justify-center border border-white/10 transition-all">
+              <i className="fas fa-times"></i>
+            </button>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={togglePlay} className="text-white text-xl hover:text-purple-400">
-                <i className={`fas ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
-              </button>
-              <div className="text-[10px] font-mono text-zinc-400">
-                <span className="text-white">{formatTime(currentTime)}</span>
-                <span className="mx-1 opacity-20">/</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-              
-              {/* Volume Mixer */}
-              <div className="hidden md:flex items-center gap-2 ml-4">
-                <i className="fas fa-volume-down text-zinc-500 text-[10px]"></i>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.01" 
-                  value={volume} 
-                  onChange={handleVolumeChange}
-                  className="w-16 h-1 bg-white/20 rounded-full accent-purple-500"
-                />
-                <i className="fas fa-volume-up text-zinc-500 text-[10px]"></i>
-              </div>
+          <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 space-y-4">
+            {/* Таймлайн */}
+            <div className="relative w-full h-1 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-purple-500" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
+              <input type="range" min="0" max={duration || 0} step="0.1" value={currentTime} onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setCurrentTime(val);
+                if (videoRef.current) videoRef.current.currentTime = val;
+              }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
             </div>
 
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsQualityMenuOpen(!isQualityMenuOpen); }}
-                className={`px-3 py-1 border rounded-lg text-[9px] font-bold uppercase transition-all ${isQualityMenuOpen ? 'bg-purple-600 text-white border-purple-400' : 'bg-white/5 border-white/10 text-zinc-400'}`}
-              >
-                {quality === 'auto' ? 'AUTO' : quality === 'high' ? '1080P' : quality === 'medium' ? '720P' : '360P'}
-              </button>
-              <button onClick={toggleFullscreen} className="text-zinc-400 hover:text-white w-6 flex justify-center text-lg">
-                <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
-              </button>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4 md:gap-8">
+                <button onClick={togglePlay} className="text-white text-2xl md:text-3xl transition-transform active:scale-90">
+                  <i className={`fas ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
+                </button>
+
+                {/* Микшер громкости в стиле плеера (без фона) */}
+                <div className="flex items-center gap-2 group/volume">
+                  <i className="fas fa-volume-down text-zinc-500 text-[10px]"></i>
+                  <div className="w-16 md:w-24 flex items-center">
+                    <input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} />
+                  </div>
+                  <i className="fas fa-volume-up text-zinc-500 text-[10px]"></i>
+                </div>
+
+                <div className="hidden sm:block text-[10px] font-mono text-zinc-500">
+                  <span className="text-white">{formatTime(currentTime)}</span>
+                  <span className="mx-2 opacity-20">/</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button onClick={() => setIsQualityMenuOpen(!isQualityMenuOpen)} className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[9px] font-bold text-white uppercase hover:bg-white/10 transition-colors">
+                  {quality.toUpperCase()}
+                </button>
+                <button onClick={toggleFullscreen} className="text-zinc-500 hover:text-white transition-colors p-2">
+                  <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'} text-lg`}></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        {isQualityMenuOpen && (
+          <div className="absolute right-4 bottom-24 z-[60] w-32 bg-zinc-900/95 backdrop-blur-md rounded-xl border border-white/10 overflow-hidden shadow-2xl">
+             {(['auto', 'high', 'medium', 'low'] as VideoQuality[]).map(q => (
+               <button key={q} onClick={() => { setQuality(q); setIsQualityMenuOpen(false); }} className={`w-full px-4 py-3 text-left text-[10px] font-bold uppercase transition-all ${quality === q ? 'text-purple-400 bg-purple-500/10' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}>
+                 {q.toUpperCase()}
+               </button>
+             ))}
+          </div>
+        )}
       </div>
 
-      {/* Reactions Section */}
-      <div className="flex items-center gap-4 flex-wrap">
+      {/* Реакции: Возвращены классические цвета (Синий, Розовый, Оранжевый) */}
+      <div className="flex items-center gap-3 md:gap-4 flex-wrap">
         <button 
-          onClick={() => addReaction('like')}
-          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-blue-500/10 hover:border-blue-500/30 transition-all group"
+          onClick={() => toggleReaction('like')} 
+          className={`flex items-center gap-3 px-5 py-3 border rounded-2xl transition-all ${userReaction === 'like' ? 'bg-blue-600/20 border-blue-500/40' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
         >
-          <i className="fas fa-thumbs-up text-blue-400 group-hover:scale-125 transition-transform"></i>
-          <span className="text-[10px] font-pixel text-zinc-300">{reactions.like}</span>
+          <i className={`fas fa-thumbs-up text-lg ${userReaction === 'like' ? 'text-blue-500' : 'text-zinc-600'}`}></i>
+          <span className={`text-[10px] font-pixel ${userReaction === 'like' ? 'text-white' : 'text-zinc-400'}`}>{reactions.like}</span>
         </button>
         <button 
-          onClick={() => addReaction('love')}
-          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-pink-500/10 hover:border-pink-500/30 transition-all group"
+          onClick={() => toggleReaction('love')} 
+          className={`flex items-center gap-3 px-5 py-3 border rounded-2xl transition-all ${userReaction === 'love' ? 'bg-pink-600/20 border-pink-500/40' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
         >
-          <i className="fas fa-heart text-pink-500 group-hover:scale-125 transition-transform"></i>
-          <span className="text-[10px] font-pixel text-zinc-300">{reactions.love}</span>
+          <i className={`fas fa-heart text-lg ${userReaction === 'love' ? 'text-pink-500' : 'text-zinc-600'}`}></i>
+          <span className={`text-[10px] font-pixel ${userReaction === 'love' ? 'text-white' : 'text-zinc-400'}`}>{reactions.love}</span>
         </button>
         <button 
-          onClick={() => addReaction('wow')}
-          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-orange-500/10 hover:border-orange-500/30 transition-all group"
+          onClick={() => toggleReaction('wow')} 
+          className={`flex items-center gap-3 px-5 py-3 border rounded-2xl transition-all ${userReaction === 'wow' ? 'bg-orange-600/20 border-orange-500/40' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
         >
-          <i className="fas fa-fire text-orange-400 group-hover:scale-125 transition-transform"></i>
-          <span className="text-[10px] font-pixel text-zinc-300">{reactions.wow}</span>
+          <i className={`fas fa-bolt text-lg ${userReaction === 'wow' ? 'text-orange-500' : 'text-zinc-600'}`}></i>
+          <span className={`text-[10px] font-pixel ${userReaction === 'wow' ? 'text-white' : 'text-zinc-400'}`}>{reactions.wow}</span>
         </button>
       </div>
 
-      {/* Comments Section */}
+      {/* Комментарии */}
       <div className="p-6 md:p-8 bg-white/[0.02] border border-white/5 rounded-3xl backdrop-blur-3xl">
-        <h3 className="text-lg font-orbitron font-bold text-white mb-6 uppercase tracking-widest flex items-center gap-3">
-           <i className="fas fa-comments text-purple-500"></i>
-           Database_Comments
-        </h3>
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-sm md:text-lg font-orbitron font-bold text-white uppercase tracking-widest">Global_Feed</h3>
+           <span className="text-[9px] font-pixel text-zinc-600 uppercase">Limit: {userCommentCount}/10</span>
+        </div>
         
-        <form onSubmit={postComment} className="mb-8 flex gap-4">
+        <form onSubmit={postComment} className="relative mb-8">
           <input 
             type="text" 
-            placeholder="Type your message..."
+            disabled={userCommentCount >= 10}
+            placeholder={userCommentCount >= 10 ? "TRANSMISSION_LIMIT_EXCEEDED" : "Write a message..."}
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
-            className="flex-grow bg-white/5 border border-white/10 rounded-xl px-5 py-3 text-sm text-zinc-200 focus:outline-none focus:border-purple-500 transition-colors"
+            className={`w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-zinc-200 focus:outline-none focus:border-purple-500 transition-all ${userCommentCount >= 10 ? 'opacity-30' : ''}`}
           />
-          <button className="px-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all active:scale-95">
-            Post
+          <button disabled={userCommentCount >= 10} className="absolute right-3 top-1/2 -translate-y-1/2 p-3 text-purple-500 disabled:opacity-0 hover:text-white transition-colors">
+            <i className="fas fa-paper-plane"></i>
           </button>
         </form>
 
-        <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-          {comments.length === 0 ? (
-            <p className="text-zinc-600 text-xs font-pixel italic opacity-40 py-10 text-center">No comments logged yet...</p>
-          ) : (
-            comments.map(c => (
-              <div key={c.id} className="flex flex-col gap-2 p-4 bg-white/[0.02] rounded-2xl border border-white/[0.03]">
-                <div className="flex justify-between items-center">
-                  <span className="text-[8px] font-pixel text-purple-400">{c.author}</span>
-                  <span className="text-[9px] text-zinc-600 font-mono">{c.timestamp}</span>
-                </div>
-                <p className="text-sm text-zinc-300 leading-relaxed">{c.text}</p>
+        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+          {comments.map(c => (
+            <div key={c.id} className="p-4 bg-white/[0.02] rounded-2xl border border-white/[0.03] hover:bg-white/[0.04] transition-all group">
+              <div className="flex justify-between items-center mb-2">
+                 <div className="flex items-center gap-3">
+                    <span className="text-[9px] font-pixel text-purple-400">{c.author}</span>
+                    <span className="text-[8px] font-mono text-zinc-700 uppercase">Synced</span>
+                 </div>
+                 <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEdit(c)} className="text-zinc-600 hover:text-blue-400 transition-colors"><i className="fas fa-edit text-[10px]"></i></button>
+                    <button onClick={() => deleteComment(c.id)} className="text-zinc-600 hover:text-red-500 transition-colors"><i className="fas fa-trash text-[10px]"></i></button>
+                    <span className="text-[9px] text-zinc-600 font-mono ml-2 uppercase tracking-tighter">{c.timestamp}</span>
+                 </div>
               </div>
-            ))
+              
+              {editingId === c.id ? (
+                <div className="flex gap-2">
+                   <input 
+                    className="flex-grow bg-white/10 border border-purple-500/50 rounded-lg px-3 py-1 text-sm text-white focus:outline-none"
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    autoFocus
+                   />
+                   <button onClick={saveEdit} className="px-3 py-1 bg-purple-600 text-white text-[10px] rounded-lg font-bold uppercase">Save</button>
+                   <button onClick={() => setEditingId(null)} className="px-3 py-1 bg-white/5 text-zinc-500 text-[10px] rounded-lg uppercase">Cancel</button>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-400 leading-relaxed font-light">{c.text}</p>
+              )}
+            </div>
+          ))}
+          {comments.length === 0 && (
+            <div className="text-center py-10 opacity-20">
+               <p className="font-pixel text-[8px] uppercase tracking-widest">No transmissions synced</p>
+            </div>
           )}
         </div>
       </div>
