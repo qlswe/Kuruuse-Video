@@ -9,16 +9,18 @@ export interface VideoSources {
 }
 
 export interface Reactions {
-  like: number;
-  love: number;
-  wow: number;
+  like: string[]; // Массив ID пользователей, поставивших лайк
+  love: string[];
+  wow: string[];
 }
 
 export interface Comment {
   id: string;
+  userId: string; // ID автора для проверки лимита в 10 сообщений
   author: string;
   text: string;
   timestamp: string;
+  isEdited?: boolean;
 }
 
 export interface VideoData {
