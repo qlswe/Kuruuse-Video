@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { VideoData, VideoQuality } from '../types';
+import { VideoData, VideoQuality, Reactions, Comment } from '../types';
 import { logger } from '../services/logger';
 
 interface VideoPlayerProps {
@@ -14,12 +14,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(() => parseFloat(localStorage.getItem('v_vol') || '0.7'));
-  const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isQualityMenuOpen, setIsQualityMenuOpen] = useState(false);
+
+  // Реакции и комментарии
+  const [reactions, setReactions] = useState<Reactions>(() => {
+    const saved = localStorage.getItem(`v_reactions_${video.id}`);
+    return saved ? JSON.parse(saved) : { like: 0, love: 0, wow: 0 };
+  });
+  const [comments, setComments] = useState<Comment[]>(() => {
+    const saved = localStorage.getItem(`v_comments_${video.id}`);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [newComment, setNewComment] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +66,36 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
     }
   };
 
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    if (videoRef.current) videoRef.current.volume = val;
+    localStorage.setItem('v_vol', val.toString());
+  };
+
+  const addReaction = (type: keyof Reactions) => {
+    const updated = { ...reactions, [type]: reactions[type] + 1 };
+    setReactions(updated);
+    localStorage.setItem(`v_reactions_${video.id}`, JSON.stringify(updated));
+    logger.log('info', `Added reaction: ${type} for video ${video.id}`);
+  };
+
+  const postComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+    const comment: Comment = {
+      id: Math.random().toString(36).substr(2, 9),
+      author: "Guest_" + Math.random().toString(36).substr(2, 4).toUpperCase(),
+      text: newComment.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    const updated = [comment, ...comments];
+    setComments(updated);
+    setNewComment("");
+    localStorage.setItem(`v_comments_${video.id}`, JSON.stringify(updated));
+    logger.log('info', `Posted comment on video ${video.id}`);
+  };
+
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', handleFsChange);
@@ -79,6 +119,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
     setIsLoading(true);
     v.src = video.sources[quality];
     v.load();
+    v.volume = volume;
 
     const onCanPlay = () => {
       setIsLoading(false);
@@ -101,97 +142,175 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onClose }) => {
   }, [quality, video]);
 
   return (
-    <div 
-      ref={containerRef}
-      className="relative w-full aspect-video bg-black rounded-xl md:rounded-3xl overflow-hidden shadow-2xl group select-none touch-none"
-      onMouseMove={handleActivity}
-      onTouchStart={handleActivity}
-    >
-      {/* Top Bar */}
-      <div className={`absolute top-0 left-0 right-0 p-3 md:p-6 z-[100] bg-gradient-to-b from-black/90 to-transparent transition-all duration-500 flex justify-between items-center ${showControls ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'}`}>
-        <div className="flex flex-col">
-          <span className="text-[7px] md:text-[9px] font-pixel text-purple-400 tracking-widest uppercase">Live_Feed</span>
-          <h3 className="text-white font-orbitron text-[10px] md:text-sm truncate max-w-[150px] uppercase">{video.title}</h3>
+    <div className="flex flex-col gap-6">
+      <div 
+        ref={containerRef}
+        className="relative w-full aspect-video bg-black rounded-xl md:rounded-3xl overflow-hidden shadow-2xl group select-none touch-none"
+        onMouseMove={handleActivity}
+        onTouchStart={handleActivity}
+      >
+        {/* Top Bar */}
+        <div className={`absolute top-0 left-0 right-0 p-3 md:p-6 z-[100] bg-gradient-to-b from-black/90 to-transparent transition-all duration-500 flex justify-between items-center ${showControls ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'}`}>
+          <div className="flex flex-col">
+            <span className="text-[7px] md:text-[9px] font-pixel text-purple-400 tracking-widest uppercase">Live_Feed</span>
+            <h3 className="text-white font-orbitron text-[10px] md:text-sm truncate max-w-[150px] uppercase">{video.title}</h3>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 md:w-10 md:h-10 bg-white/5 hover:bg-red-500/80 backdrop-blur-md text-white rounded-full flex items-center justify-center transition-all">
+            <i className="fas fa-times text-xs md:text-base"></i>
+          </button>
         </div>
-        <button onClick={onClose} className="w-8 h-8 md:w-10 md:h-10 bg-white/5 hover:bg-red-500/80 backdrop-blur-md text-white rounded-full flex items-center justify-center transition-all">
-          <i className="fas fa-times text-xs md:text-base"></i>
+
+        {/* Video Content */}
+        <div className="w-full h-full relative flex items-center justify-center bg-black">
+          {(isLoading || isSeeking) && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
+              <div className="w-10 h-10 border-2 border-purple-500/10 border-t-purple-500 rounded-full animate-spin"></div>
+            </div>
+          )}
+          <video
+            ref={videoRef}
+            className="w-full h-full object-contain cursor-pointer"
+            onTimeUpdate={() => !isSeeking && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+            onClick={togglePlay}
+            playsInline
+          />
+        </div>
+
+        {/* Quality Menu */}
+        {isQualityMenuOpen && (
+          <div className="absolute inset-0 z-[1000] pointer-events-none flex items-end justify-end p-4 md:p-8">
+            <div className="fixed inset-0 pointer-events-auto bg-black/10" onClick={() => setIsQualityMenuOpen(false)}></div>
+            <div className="relative pointer-events-auto w-32 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom-2 duration-200 mb-14 md:mb-20">
+                {(['auto', 'high', 'medium', 'low'] as VideoQuality[]).map(q => (
+                  <button 
+                    key={q} 
+                    onClick={(e) => handleQualityChange(e, q)}
+                    className={`w-full px-4 py-3 text-left text-[10px] font-bold uppercase border-b border-white/5 last:border-0 transition-colors ${quality === q ? 'text-purple-400 bg-purple-500/10' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
+                  >
+                    {q === 'high' ? '1080P' : q === 'medium' ? '720P' : q === 'low' ? '360P' : 'AUTO'}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Controls */}
+        <div className={`absolute bottom-0 left-0 right-0 p-3 md:p-8 bg-gradient-to-t from-black via-black/40 to-transparent z-[200] transition-all duration-500 ${showControls || !isPlaying ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}>
+          
+          {/* Timeline */}
+          <div className="relative w-full h-6 mb-3 flex items-center group/timeline">
+            <div className="absolute w-full h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.7)]" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}></div>
+            </div>
+            <input type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onMouseDown={() => setIsSeeking(true)} onMouseUp={() => setIsSeeking(false)} onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              setCurrentTime(val);
+              if (videoRef.current) videoRef.current.currentTime = val;
+            }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
+            <div className="absolute w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none" style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}></div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={togglePlay} className="text-white text-xl hover:text-purple-400">
+                <i className={`fas ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
+              </button>
+              <div className="text-[10px] font-mono text-zinc-400">
+                <span className="text-white">{formatTime(currentTime)}</span>
+                <span className="mx-1 opacity-20">/</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+              
+              {/* Volume Mixer */}
+              <div className="hidden md:flex items-center gap-2 ml-4">
+                <i className="fas fa-volume-down text-zinc-500 text-[10px]"></i>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="1" 
+                  step="0.01" 
+                  value={volume} 
+                  onChange={handleVolumeChange}
+                  className="w-16 h-1 bg-white/20 rounded-full accent-purple-500"
+                />
+                <i className="fas fa-volume-up text-zinc-500 text-[10px]"></i>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setIsQualityMenuOpen(!isQualityMenuOpen); }}
+                className={`px-3 py-1 border rounded-lg text-[9px] font-bold uppercase transition-all ${isQualityMenuOpen ? 'bg-purple-600 text-white border-purple-400' : 'bg-white/5 border-white/10 text-zinc-400'}`}
+              >
+                {quality === 'auto' ? 'AUTO' : quality === 'high' ? '1080P' : quality === 'medium' ? '720P' : '360P'}
+              </button>
+              <button onClick={toggleFullscreen} className="text-zinc-400 hover:text-white w-6 flex justify-center text-lg">
+                <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Reactions Section */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <button 
+          onClick={() => addReaction('like')}
+          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-blue-500/10 hover:border-blue-500/30 transition-all group"
+        >
+          <i className="fas fa-thumbs-up text-blue-400 group-hover:scale-125 transition-transform"></i>
+          <span className="text-[10px] font-pixel text-zinc-300">{reactions.like}</span>
+        </button>
+        <button 
+          onClick={() => addReaction('love')}
+          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-pink-500/10 hover:border-pink-500/30 transition-all group"
+        >
+          <i className="fas fa-heart text-pink-500 group-hover:scale-125 transition-transform"></i>
+          <span className="text-[10px] font-pixel text-zinc-300">{reactions.love}</span>
+        </button>
+        <button 
+          onClick={() => addReaction('wow')}
+          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/5 rounded-2xl hover:bg-orange-500/10 hover:border-orange-500/30 transition-all group"
+        >
+          <i className="fas fa-fire text-orange-400 group-hover:scale-125 transition-transform"></i>
+          <span className="text-[10px] font-pixel text-zinc-300">{reactions.wow}</span>
         </button>
       </div>
 
-      {/* Video Content */}
-      <div className="w-full h-full relative flex items-center justify-center bg-black">
-        {(isLoading || isSeeking) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
-            <div className="w-10 h-10 border-2 border-purple-500/10 border-t-purple-500 rounded-full animate-spin"></div>
-          </div>
-        )}
-        <video
-          ref={videoRef}
-          className="w-full h-full object-contain cursor-pointer"
-          onTimeUpdate={() => !isSeeking && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
-          onClick={togglePlay}
-          crossOrigin="anonymous"
-          playsInline
-        />
-      </div>
-
-      {/* Quality Menu - ВЫНЕСЕНО ВЫШЕ ВСЕХ СЛОЕВ */}
-      {isQualityMenuOpen && (
-        <div className="absolute inset-0 z-[1000] pointer-events-none flex items-end justify-end p-4 md:p-8">
-           <div className="fixed inset-0 pointer-events-auto bg-black/10" onClick={() => setIsQualityMenuOpen(false)}></div>
-           <div className="relative pointer-events-auto w-32 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom-2 duration-200 mb-14 md:mb-20">
-              {(['auto', 'high', 'medium', 'low'] as VideoQuality[]).map(q => (
-                <button 
-                  key={q} 
-                  onClick={(e) => handleQualityChange(e, q)}
-                  className={`w-full px-4 py-3 text-left text-[10px] font-bold uppercase border-b border-white/5 last:border-0 transition-colors ${quality === q ? 'text-purple-400 bg-purple-500/10' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
-                >
-                  {q === 'high' ? '1080P' : q === 'medium' ? '720P' : q === 'low' ? '360P' : 'AUTO'}
-                </button>
-              ))}
-           </div>
-        </div>
-      )}
-
-      {/* Bottom Controls */}
-      <div className={`absolute bottom-0 left-0 right-0 p-3 md:p-8 bg-gradient-to-t from-black via-black/40 to-transparent z-[200] transition-all duration-500 ${showControls || !isPlaying ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}>
+      {/* Comments Section */}
+      <div className="p-6 md:p-8 bg-white/[0.02] border border-white/5 rounded-3xl backdrop-blur-3xl">
+        <h3 className="text-lg font-orbitron font-bold text-white mb-6 uppercase tracking-widest flex items-center gap-3">
+           <i className="fas fa-comments text-purple-500"></i>
+           Database_Comments
+        </h3>
         
-        {/* Timeline */}
-        <div className="relative w-full h-6 mb-3 flex items-center group/timeline">
-          <div className="absolute w-full h-1 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.7)]" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}></div>
-          </div>
-          <input type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onMouseDown={() => setIsSeeking(true)} onMouseUp={() => setIsSeeking(false)} onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            setCurrentTime(val);
-            if (videoRef.current) videoRef.current.currentTime = val;
-          }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
-          <div className="absolute w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none" style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}></div>
-        </div>
+        <form onSubmit={postComment} className="mb-8 flex gap-4">
+          <input 
+            type="text" 
+            placeholder="Type your message..."
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            className="flex-grow bg-white/5 border border-white/10 rounded-xl px-5 py-3 text-sm text-zinc-200 focus:outline-none focus:border-purple-500 transition-colors"
+          />
+          <button className="px-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all active:scale-95">
+            Post
+          </button>
+        </form>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="text-white text-xl hover:text-purple-400">
-              <i className={`fas ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
-            </button>
-            <div className="text-[10px] font-mono text-zinc-400">
-              <span className="text-white">{formatTime(currentTime)}</span>
-              <span className="mx-1 opacity-20">/</span>
-              <span>{formatTime(duration)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={(e) => { e.stopPropagation(); setIsQualityMenuOpen(!isQualityMenuOpen); }}
-              className={`px-3 py-1 border rounded-lg text-[9px] font-bold uppercase transition-all ${isQualityMenuOpen ? 'bg-purple-600 text-white border-purple-400' : 'bg-white/5 border-white/10 text-zinc-400'}`}
-            >
-              {quality === 'auto' ? 'AUTO' : quality === 'high' ? '1080P' : quality === 'medium' ? '720P' : '360P'}
-            </button>
-            <button onClick={toggleFullscreen} className="text-zinc-400 hover:text-white w-6 flex justify-center text-lg">
-              <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
-            </button>
-          </div>
+        <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+          {comments.length === 0 ? (
+            <p className="text-zinc-600 text-xs font-pixel italic opacity-40 py-10 text-center">No comments logged yet...</p>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="flex flex-col gap-2 p-4 bg-white/[0.02] rounded-2xl border border-white/[0.03]">
+                <div className="flex justify-between items-center">
+                  <span className="text-[8px] font-pixel text-purple-400">{c.author}</span>
+                  <span className="text-[9px] text-zinc-600 font-mono">{c.timestamp}</span>
+                </div>
+                <p className="text-sm text-zinc-300 leading-relaxed">{c.text}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
