@@ -8,6 +8,19 @@ export interface VideoSources {
   auto: string;
 }
 
+export interface Reactions {
+  like: number;
+  love: number;
+  wow: number;
+}
+
+export interface Comment {
+  id: string;
+  author: string;
+  text: string;
+  timestamp: string;
+}
+
 export interface VideoData {
   id: string;
   title: string;
