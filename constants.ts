@@ -6,19 +6,19 @@ export const INITIAL_VIDEOS: VideoData[] = [
   {
     id: "rotten-girl",
     title: "SAWTOWNE - Confessions of a Rotten Girl",
-    description: "SAWTOWNE - Confessions of a Rotten Girl / ft. Hatsune Miku.\n\n[SYSTEM] Ссылка на видео перенаправлена на стабильный HTTPS-сервер.",
-    thumbnail: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=800",
+    description: "SAWTOWNE - Confessions of a Rotten Girl / ft. Hatsune Miku.",
+    thumbnail: "https://qlseeh-video.my1.ru/rotten_girl.jpg",
     sources: {
-      high: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      medium: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      low: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      auto: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+      high: "https://cdn.my1.ru/Rotten_Girl_high.mp4",
+      medium: "https://cdn.my1.ru/Rotten_Girl_medium.mp4",
+      low: "https://cdn.my1.ru/Rotten_Girl_low.mp4",
+      auto: "https://cdn.my1.ru/Rotten_Girl_auto.mp4"
     }
   },
   {
     id: "duke-venomania",
     title: "Mothy - The Lunacy of Duke Venomania",
-    description: "The Lunacy of Duke Venomania / Безумие Герцога Веномания.\n\n[SYSTEM] Поток оптимизирован для высокоскоростных соединений.",
+    description: "The Lunacy of Duke Venomania / Безумие Герцога Веномания.",
     thumbnail: "https://images.unsplash.com/photo-1514525253361-bee8718a340b?auto=format&fit=crop&q=80&w=800",
     sources: {
       high: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
