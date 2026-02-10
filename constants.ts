@@ -41,4 +41,4 @@ export const INITIAL_VIDEOS: VideoData[] = [
   }
 ];
 
-export const APP_VERSION = "v2.5.0-ucoz-ready";
+export const APP_VERSION = "v2.5.0";
