@@ -1,13 +1,12 @@
 
 import { VideoData } from './types';
 
-// Используем HTTPS и надежные CDN-источники для гарантии воспроизведения на uCoz
 export const INITIAL_VIDEOS: VideoData[] = [
   {
     id: "rotten-girl",
     title: "SAWTOWNE - Confessions of a Rotten Girl",
-    description: "SAWTOWNE - Confessions of a Rotten Girl / ft. Hatsune Miku.",
-    thumbnail: "https://qlseeh-video.my1.ru/rotten_girl.jpg",
+    description: "SAWTOWNE - Confessions of a Rotten Girl / ft. Hatsune Miku / SAWTOWNE - Признание гнилой девчонки / при участии Hatsune Miku.",
+    thumbnail: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=800",
     sources: {
       high: "https://cdn.my1.ru/Rotten_Girl_high.mp4",
       medium: "https://cdn.my1.ru/Rotten_Girl_medium.mp4",
@@ -18,7 +17,7 @@ export const INITIAL_VIDEOS: VideoData[] = [
   {
     id: "duke-venomania",
     title: "Mothy - The Lunacy of Duke Venomania",
-    description: "The Lunacy of Duke Venomania / Безумие Герцога Веномания.",
+    description: "The Lunacy of Duke Venomania / Безумие Герцога Веномания.\n\n[SYSTEM] Поток оптимизирован для высокоскоростных соединений.",
     thumbnail: "https://images.unsplash.com/photo-1514525253361-bee8718a340b?auto=format&fit=crop&q=80&w=800",
     sources: {
       high: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
@@ -41,4 +40,4 @@ export const INITIAL_VIDEOS: VideoData[] = [
   }
 ];
 
-export const APP_VERSION = "v2.5.0";
+export const APP_VERSION = "v2.5.1-cors-fix";
